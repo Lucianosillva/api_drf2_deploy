@@ -1,0 +1,499 @@
+# API completa com Django e DRF (parte 1)
+
+!image.png
+
+https://docs.djangoproject.com/en/5.1/
+
+https://www.django-rest-framework.org/
+
+## Vamos praticar
+
+Criaremos uma API com Django e DRF para cadastro de carros.
+
+Repositório do projeto: https://github.com/pycodebr/cars_api
+
+Criar venv e instalar Django e DRF
+
+```bash
+python -m venv venv
+venv/Scripts/activate
+
+pip install django
+pip install djangorestframework
+```
+
+Criar e inicializar projeto Django
+
+```bash
+django-admin startproject core .
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+Rodar o sistema e acessar o admin
+
+```bash
+python manage.py runserver
+```
+
+Criar app de carros
+
+```bash
+python manage.py startapp cars
+```
+
+*core/settings.py*
+
+```python
+INSTALLED_APPS = [
+		'rest_framework',
+
+    'cars',
+]
+
+LANGUAGE_CODE = 'pt-br'
+TIME_ZONE = 'America/Sao_Paulo'
+```
+
+Modelar o sistema
+
+*cars/models.py*
+
+```python
+from django.db import models
+from django.contrib.auth.models import User
+
+class Brand(models.Model):
+    name = models.CharField(max_length=100, verbose_name='Nome')
+    description = models.TextField(null=True, blank=True, verbose_name='Descrição')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Criado em')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Atualizado em')
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Marca'
+
+    def __str__(self):
+        return self.name
+
+class Car(models.Model):
+    model = models.CharField(max_length=100, verbose_name='Modelo')
+    brand = models.ForeignKey(Brand, on_delete=models.PROTECT, verbose_name='Marca')
+    factory_year = models.IntegerField(null=True, verbose_name='Ano de fabricação')
+    model_year = models.IntegerField(null=True, verbose_name='Ano do modelo')
+    color = models.CharField(max_length=50, null=True, blank=True, verbose_name='Cor')
+    owner = models.ForeignKey(User, on_delete=models.PROTECT, null=True,
+													    verbose_name='Proprietário')
+    description = models.TextField(null=True, blank=True, verbose_name='Descrição')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Criado em')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Atualizado em')
+
+    class Meta:
+        ordering = ['model']
+        verbose_name = 'Carro'
+
+    def __str__(self):
+        return self.model
+
+```
+
+Migrations e migrate
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+Configurar o admin
+
+*cars/admin.py*
+
+```python
+from django.contrib import admin
+from cars.models import Brand, Car
+
+class BrandAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'created_at',)
+    search_fields = ('name',)
+
+class CarAdmin(admin.ModelAdmin):
+    list_display = ('id', 'model', 'brand__name', 'color',
+'factory_year', 'model_year', 'created_at',)
+    search_fields = ('model',)
+    list_filter = ('brand',)
+
+admin.site.register(Brand, BrandAdmin)
+admin.site.register(Car, CarAdmin)
+
+```
+
+Criar urls, views e serializers
+
+*cars/urls.py*
+
+```python
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from cars.views import BrandModelViewSet, CarModelViewSet
+
+router = DefaultRouter()
+router.register('brands', BrandModelViewSet)
+router.register('cars', CarModelViewSet)
+
+urlpatterns = [
+    path('', include(router.urls)),
+]
+
+```
+
+*core/urls.py*
+
+```python
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+
+    path('api/v1/', include('cars.urls')),
+]
+
+```
+
+*cars/views.py*
+
+```python
+from rest_framework import viewsets
+from cars.models import Brand, Car
+from cars.serializers import BrandModelSerializer, CarModelSerializer
+
+class BrandModelViewSet(viewsets.ModelViewSet):
+    queryset = Brand.objects.all()
+    serializer_class = BrandModelSerializer
+
+class CarModelViewSet(viewsets.ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarModelSerializer
+
+```
+
+cars/serializers.py
+
+```python
+from rest_framework import serializers
+from cars.models import Brand, Car
+
+class BrandModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = '__all__'
+
+class CarModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Car
+        fields = '__all__'
+
+```
+
+## Filtros com RQL
+
+### O que é RQL?
+
+RQL, ou **Resource Query Language**, é uma linguagem de consulta projetada para realizar filtros, ordenações e paginações de maneira consistente e estruturada em APIs RESTful. Ela permite que os clientes de uma API especifiquem critérios de pesquisa diretamente na URL da requisição, facilitando a manipulação e extração de dados de acordo com necessidades específicas.
+
+https://django-rql.readthedocs.io/en/latest/getting_started/  (tem as opções de filtro, tipo: ilike, like, eq, ge, gt, etc).
+
+$ curl http://127.0.0.1:8080/api/v1/products?like(name,Unicorn*)|eq(name,LLC)
+
+Instalação
+
+```bash
+pip install django-rql
+```
+
+Configurar RQL na view
+
+*cars/views.py*
+
+```python
+from dj_rql.drf import RQLFilterBackend
+from rest_framework import viewsets
+from cars.filters import BrandFilterClass, CarFilterClass
+from cars.models import Brand, Car
+from cars.serializers import BrandModelSerializer, CarModelSerializer
+
+class BrandModelViewSet(viewsets.ModelViewSet):
+    queryset = Brand.objects.all()
+    serializer_class = BrandModelSerializer
+    filter_backends = [RQLFilterBackend]
+    rql_filter_class = BrandFilterClass
+
+class CarModelViewSet(viewsets.ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarModelSerializer
+    filter_backends = [RQLFilterBackend]
+    rql_filter_class = CarFilterClass
+
+```
+
+*cars/filters.py*
+
+```python
+from dj_rql.filter_cls import AutoRQLFilterClass, FilterLookups
+from cars.models import Brand, Car
+
+class BrandFilterClass(AutoRQLFilterClass):
+    MODEL = Brand
+
+class CarFilterClass(AutoRQLFilterClass):
+    MODEL = Car
+# personalizando o filtro, permite que a busca seja feita pelos nomes dos campos e não pelos id's
+    FILTERS = [
+        {
+            'filter': 'brand',
+            'source': 'brand__name',
+        },
+        {
+            'filter': 'owner',
+            'source': 'owner__username',
+        },
+    ]
+
+```
+
+Testar filters, lookups e ordering conforme documentação
+
+## Autenticação por JWT
+
+https://django-rest-framework-simplejwt.readthedocs.io/en/latest/
+
+Instalação
+
+```bash
+pip install djangorestframework-simplejwt
+```
+
+*core/settings.py*
+
+```python
+from datetime import timedelta
+
+INSTALLED_APPS = [
+		'rest_framework_simplejwt',
+]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5), # tempo de validade do token
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1), # tempo que pode ficar dando refresh, depois tem que gerar um novo token. Para dar refresh você pega o refresh gerado pelo token cola no corpo da requisição e envia (na url de criar token), vai gerar um novo token para ser usado durante o tempo definido para validade do token.
+}
+
+```
+
+*core/urls.py*
+
+```python
+from django.contrib import admin
+from django.urls import path, include
+from rest_framework_simplejwt import views as jwt_views
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+
+# rota jwt
+# é uma rota post para gerar o token, no corpo da requisição passe o username e password dos usuários cadastras no painel admin, depois use o token gerado.
+
+    path('api/v1/token/', jwt_views.TokenObtainPairView.as_view(),
+			    name='token_obtain_pair'),
+
+# rota jwt
+# é uma rota post, depois do token expirar use esta rota para gerar um novo token, e pode ir gerando durante o tempo definido nas conf. do settings, depois desse tempo tem que gerar um novo token pela rota de gerar token...
+
+    path('api/v1/token/refresh/', jwt_views.TokenRefreshView.as_view(),
+			    name='token_refresh'),
+
+    path('api/v1/', include('cars.urls')),
+]
+```
+
+
+#  PERMISSÕES
+
+# depois da autenticação temos que implementar a gestão de permissões... e o drf traz pronta várias classes de permissões, dentre as mais usadas temos:
+
+
+e para implementar...
+defina as permissões de cada usuáiro no admin...
+escolha a classe de permissões que atende a demanda... (neste exemplo usamos DjangoModelPermissions, que verifica se o usuário logado tem as permissões que foram definidas para ele)
+
+
+https://whimsical.com/permissoes-do-django-DhKNgVrwhWWLQB1EqfyRek
+
+DRF tem classes de permissões prontas para uso, que podem ser definidas no settings do projeto como default, ou personalizado por view.
+
+As classes de permissões prontas do DRF são:
+
+- AllowAny (deixa a api pública de novo)
+- IsAuthenticated
+- IsAdminUser
+- IsAuthenticatedOrReadOnly
+- DjangoModelPermissions
+- DjangoModelPermissionsOrAnonReadOnly
+- DjangoObjectPermissions
+
+Podemos usar DjangoModelPermissions como default (olha se o usuário logado tem as permissões escolhidas para ele no admin)
+
+*core/settings.py*
+
+```python
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.DjangoModelPermissions',
+    ),
+}
+
+```
+
+Todas as rotas do projeto irão ter por padrão as classes de permissões definidas no settings, porém é possível sobrescrever esse padrão na rota/view que desejar, como no exemplo abaixo:
+
+*cars/views.py*
+
+```python
+class CarModelViewSet(viewsets.ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarModelSerializer
+    filter_backends = [RQLFilterBackend]
+    rql_filter_class = CarFilterClass
+    permission_classes = [permissions.AllowAny]
+
+```
+
+### Permissões personalizadas
+
+Se nenhuma classe de permissões prontas do DRF atender sua demanda, você pode criar suas próprias classes de permissões personalizadas usando o BasePermission do DRF.
+
+Por exemplo, podemos implementar permissões para o usuário logado ter acesso apenas aos carros em que ele é dono/owner.
+
+*cars/permissions.py*
+
+```python
+from rest_framework import permissions
+
+class CarOwnerPermission(permissions.BasePermission):
+
+    def has_permission(self, request, view): # busca por lista...
+        if view.action == 'list':
+            view.queryset = view.queryset.filter(owner=request.user)
+            return True
+        return super().has_permission(request, view)
+
+    def has_object_permission(self, request, view, obj): # busca por objeto (carro 1 por exemplo)
+        return obj.owner == request.user
+
+```
+
+*cars/views.py*
+
+```python
+from cars.permissions import CarOwnerPermission
+
+class CarModelViewSet(viewsets.ModelViewSet):
+    queryset = Car.objects.all()
+    serializer_class = CarModelSerializer
+    filter_backends = [RQLFilterBackend]
+    rql_filter_class = CarFilterClass
+    permission_classes = [permissions.DjangoModelPermissions, CarOwnerPermission,]
+
+```
+
+## Paginação
+
+O DRF tem algumas classes de paginação prontas para utilizar:
+
+- PageNumberPagination
+    - O estilo PageNumberPagination aceita um único número de página nos parâmetros de consulta da solicitação
+
+- LimitOffsetPagination
+    - No estilo LimitOffsetPagination, o cliente inclui um parâmetro de consulta “limite” e “deslocamento”
+
+- CursorPagination
+    - O CursorPagination fornece um indicador de cursor para percorrer o conjunto de resultados. Ele fornece apenas controles de avanço ou reverso e não permite que o cliente navegue para posições arbitrárias. O estilo CursorPagination assume que deve haver um campo de carimbo de data / hora criado na instância do modelo e ordena os resultados por '-created’
+
+*core/settings.py*
+
+```python
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
+    'PAGE_SIZE': 10
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
+    'PAGE_SIZE': 10
+}
+```
+
+## Linter e Dependências
+
+https://peps.python.org/pep-0008/
+
+https://flake8.pycqa.org/en/latest/
+
+Para adequar nosso projeto aos padrões da PEP08, podemos instalar configurar um linter como o flake8:
+
+```bash
+pip install flake8
+```
+
+*.flake8*
+
+```bash
+[flake8]
+exclude = venv
+ignore = E501
+
+```
+
+Para rodar o linter check:
+
+```bash
+flake8
+```
+
+Também devemos organizar as dependências do nosso projeto dentro do padrão e boas práticas. Para isso vamos usar o comando *pip freeze* e salvar as dependências em um arquivo *requirements.txt*
+
+```bash
+pip freeze > requirements.txt
+```
+
+Separar dependências de produção e dependências de desenvolvimento também é uma boa prática. Para isso, vamos criar um arquivo *requirements_dev.txt* apenas com dependências de ambiente de desenvolvimento, como o flake8, por exemplo
+
+*requirements_dev.txt*
+
+```
+flake8==7.1.1
+mccabe==0.7.0
+pycodestyle==2.12.1
+pyflakes==3.2.0
+```
+
+
+
+
